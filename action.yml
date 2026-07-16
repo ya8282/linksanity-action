@@ -1,0 +1,97 @@
+name: linksanity
+description: Scan documentation for broken links with linksanity and fail the job if any are found.
+author: ya8282
+
+inputs:
+  paths:
+    description: Space-separated paths to scan for links.
+    required: false
+    default: "."
+  version:
+    description: Version of linksanity to install from PyPI. Empty string installs the latest release.
+    required: false
+    default: ""
+  python-version:
+    description: Python version to set up for running linksanity.
+    required: false
+    default: "3.12"
+  check-anchors:
+    description: Whether to check in-page anchor links ("true"/"false").
+    required: false
+    default: "false"
+  skip-urls:
+    description: Space-separated URL patterns to skip.
+    required: false
+    default: ""
+  output:
+    description: Path to write the JSON scan results to.
+    required: false
+    default: "linkcheck-results.json"
+  args:
+    description: Extra raw arguments passed through to `linksanity scan` as-is.
+    required: false
+    default: ""
+  upload-results:
+    description: Whether to upload the scan results file as a workflow artifact ("true"/"false").
+    required: false
+    default: "true"
+
+outputs:
+  broken-count:
+    description: Number of links with status "broken" or "error" found by the scan.
+    value: ${{ steps.scan.outputs.broken-count }}
+  results-file:
+    description: Path to the JSON results file written by the scan.
+    value: ${{ steps.scan.outputs.results-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install linksanity
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install "linksanity==${{ inputs.version }}"
+        else
+          pip install "linksanity"
+        fi
+
+    - name: Run scan
+      id: scan
+      shell: bash
+      run: |
+        flags=""
+        if [ "${{ inputs.check-anchors }}" = "true" ]; then
+          flags="$flags --check-anchors"
+        fi
+        if [ -n "${{ inputs.skip-urls }}" ]; then
+          flags="$flags --skip-urls ${{ inputs.skip-urls }}"
+        fi
+
+        set +e
+        linksanity scan ${{ inputs.paths }} --format json --output "${{ inputs.output }}" $flags ${{ inputs.args }}
+        code=$?
+        set -e
+
+        broken_count=$(jq '[.[] | select(.status=="broken" or .status=="error")] | length' "${{ inputs.output }}")
+
+        echo "broken-count=$broken_count" >> "$GITHUB_OUTPUT"
+        echo "results-file=${{ inputs.output }}" >> "$GITHUB_OUTPUT"
+
+        exit $code
+
+    - name: Upload scan results
+      if: always() && inputs.upload-results == 'true'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: linksanity-results
+        path: ${{ inputs.output }}
+
+branding:
+  icon: link
+  color: purple
