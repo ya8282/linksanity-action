@@ -71,7 +71,9 @@ runs:
         fi
         if [ -n "${{ inputs.skip-urls }}" ]; then
           skip_file=$(mktemp)
+          set -f
           printf '%s\n' ${{ inputs.skip-urls }} > "$skip_file"
+          set +f
           flags="$flags --skip-urls $skip_file"
         fi
 
