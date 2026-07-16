@@ -70,7 +70,9 @@ runs:
           flags="$flags --check-anchors"
         fi
         if [ -n "${{ inputs.skip-urls }}" ]; then
-          flags="$flags --skip-urls ${{ inputs.skip-urls }}"
+          skip_file=$(mktemp)
+          printf '%s\n' ${{ inputs.skip-urls }} > "$skip_file"
+          flags="$flags --skip-urls $skip_file"
         fi
 
         set +e
