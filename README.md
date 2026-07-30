@@ -34,7 +34,7 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 | Name             | Description                                                             | Required | Default                    |
 | ----------------- | ------------------------------------------------------------------------ | -------- | --------------------------- |
 | `paths`           | Space-separated paths to scan for links.                                 | false    | `.`                         |
-| `version`          | Version of linksanity to install from PyPI. Empty string installs the latest release. | false    | `""`                        |
+| `version`          | Version of linksanity to install from PyPI, pinned to the release this action is tested against. Pass `""` to track latest instead. | false    | `0.2.0`                     |
 | `python-version`   | Python version to set up for running linksanity.                         | false    | `3.12`                      |
 | `check-anchors`    | Whether to check in-page anchor links (`"true"`/`"false"`).              | false    | `false`                     |
 | `skip-urls`        | Space-separated URL patterns to skip.                                    | false    | `""`                        |
@@ -45,6 +45,10 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 | `browser`          | Whether to install the Playwright browser extra, required for `--js-domains` (`"true"`/`"false"`). Adds a Chromium download to the run. | false    | `false`                     |
 
 `--js-domains` passed via `args` requires `browser: true`; otherwise the action fails fast with a clear error instead of installing Playwright unconditionally on every run.
+
+### Versioning
+
+This action pins `version` to a known-good linksanity release by default, so upgrading the action (via its tag) is what upgrades linksanity; the CLI is not left to float on its own. Pass `version: ""` to track the latest linksanity release instead; a CLI change (e.g. a renamed or removed flag) can then break the action without warning. Pass an explicit `version: "X.Y.Z"` to pin to a different release.
 
 ## Outputs
 

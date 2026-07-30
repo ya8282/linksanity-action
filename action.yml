@@ -8,9 +8,11 @@ inputs:
     required: false
     default: "."
   version:
-    description: Version of linksanity to install from PyPI. Empty string installs the latest release.
+    # Bump this default whenever a new linksanity release should reach action
+    # users: this is the one place that controls what consumers get.
+    description: Version of linksanity to install from PyPI, pinned to the release this action is tested against. Pass "" to track the latest release instead (may break if the CLI changes), or an explicit "X.Y.Z" to pin to something else.
     required: false
-    default: ""
+    default: "0.2.0"
   python-version:
     description: Python version to set up for running linksanity.
     required: false
