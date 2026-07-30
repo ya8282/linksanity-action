@@ -17,6 +17,7 @@ jobs:
         continue-on-error: true
         with:
           paths: test-docs/broken/
+          artifact-name: linksanity-results-broken-fixture
       - name: Assert broken link was detected
         run: |
           test "${{ steps.scan.outcome }}" = "failure"
@@ -31,6 +32,7 @@ jobs:
         uses: ./
         with:
           paths: test-docs/clean/
+          artifact-name: linksanity-results-clean-fixture
       - name: Assert no broken links were detected
         run: |
           test "${{ steps.scan.outcome }}" = "success"
@@ -47,6 +49,7 @@ jobs:
         with:
           paths: test-docs/clean/
           args: "--js-domains foo.txt"
+          upload-results: "false"
       - name: Assert the guard rejected --js-domains without browser
         run: |
           test "${{ steps.scan.outcome }}" = "failure"

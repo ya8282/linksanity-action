@@ -35,6 +35,10 @@ inputs:
     description: Whether to upload the scan results file as a workflow artifact ("true"/"false").
     required: false
     default: "true"
+  artifact-name:
+    description: Name of the workflow artifact to upload the scan results as. Set a distinct value per job when a workflow calls this action more than once, since upload-artifact rejects duplicate names within a run.
+    required: false
+    default: "linksanity-results"
   browser:
     description: Whether to install the Playwright browser extra, required for --js-domains ("true"/"false"). Adds a Chromium download to the run.
     required: false
@@ -186,7 +190,7 @@ runs:
       if: always() && inputs.upload-results == 'true'
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        name: linksanity-results
+        name: ${{ inputs.artifact-name }}
         path: ${{ inputs.output }}
 
 branding:
