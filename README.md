@@ -20,7 +20,7 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 - uses: ya8282/linksanity-action@v1
   with:
     paths: docs/ README.md
-    version: "0.1.0"
+    version: "0.2.0"
     python-version: "3.12"
     check-anchors: "true"
     skip-urls: "https://example.com/flaky-endpoint *.internal.example.com"
