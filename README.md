@@ -4,6 +4,8 @@ A GitHub composite action that scans documentation for broken links with
 [linksanity](https://pypi.org/project/linksanity/) and fails the job if any
 are found.
 
+Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity) for the linksanity CLI itself — this repo is just the GitHub Action wrapper around it.
+
 ## Minimal usage
 
 ```yaml
