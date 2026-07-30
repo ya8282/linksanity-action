@@ -125,6 +125,54 @@ runs:
         broken_count=0
         if [ -f "$OUTPUT" ]; then
           broken_count=$(jq '[.[] | select(.status=="broken" or .status=="error")] | length' "$OUTPUT" 2>/dev/null || echo 0)
+
+          if [ "$broken_count" -gt 0 ]; then
+            # Emit one GitHub Actions error annotation per broken link so the
+            # failure is visible in the raw log without downloading the
+            # uploaded artifact. Build the fully-formed annotation line in
+            # jq itself (not by interpolating fields into the shell) since
+            # urls/errors can contain characters meaningful to bash.
+            # .error (and, more rarely, .url/.source_file) can be arbitrary
+            # third-party text -- e.g. a Playwright exception string -- and
+            # may contain embedded CR/LF. Left unsanitized, jq -r would emit
+            # that newline literally and `while read` would split it into a
+            # second "line" that GitHub parses as its own, attacker-controlled
+            # ::error:: annotation. Collapse CR/LF to a space before use. The
+            # file= property is further restricted (no "," or "::") since
+            # those characters would corrupt GitHub's file=/line= parsing.
+            jq -r '
+              .[]
+              | select(.status=="broken" or .status=="error")
+              | . as $r
+              | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
+              | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
+              | (if $r.http_code != null then ($r.http_code|tostring) elif $r.error != null then ($r.error|tostring) else "" end | gsub("[\r\n]+"; " ")) as $detail
+              | ($source | gsub(","; "_") | gsub("::"; ":")) as $file_attr
+              | (if $r.line == null then "" else ",line=" + ($r.line|tostring) end) as $lineattr
+              | "::error file=" + $file_attr + $lineattr + "::" + $url + " — " + ($r.status // "") + (if $detail == "" then "" else " " + $detail end)
+            ' "$OUTPUT" | while IFS= read -r annotation; do
+              printf '%s\n' "$annotation"
+            done || true
+
+            if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+              {
+                echo "### $broken_count broken link(s) found"
+                echo ""
+                echo "| Source | Line | URL | Status | Detail |"
+                echo "| --- | --- | --- | --- | --- |"
+                jq -r '
+                  .[]
+                  | select(.status=="broken" or .status=="error")
+                  | . as $r
+                  | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
+                  | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
+                  | (if $r.line == null then "" else ($r.line|tostring) end) as $lineval
+                  | (if $r.http_code != null then ($r.http_code|tostring) elif $r.error != null then ($r.error|tostring) else "" end | gsub("[\r\n]+"; " ")) as $detail
+                  | "| " + ($source | gsub("\\|"; "\\|")) + " | " + $lineval + " | " + ($url | gsub("\\|"; "\\|")) + " | " + ($r.status // "") + " | " + ($detail | gsub("\\|"; "\\|")) + " |"
+                ' "$OUTPUT"
+              } >> "$GITHUB_STEP_SUMMARY" || true
+            fi
+          fi
         else
           echo "::warning::linksanity exited $code without writing $OUTPUT; reporting broken-count=0. Check the scan step log above for the underlying error."
         fi
