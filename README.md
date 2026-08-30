@@ -25,6 +25,7 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
     check-anchors: "true"
     skip-urls: "https://example.com/flaky-endpoint *.internal.example.com"
     output: linkcheck-results.json
+    baseline: .linksanity-baseline.json
     args: "--check-images"
     upload-results: "true"
 ```
@@ -39,12 +40,15 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 | `check-anchors`    | Whether to check in-page anchor links (`"true"`/`"false"`).              | false    | `false`                     |
 | `skip-urls`        | Space-separated URL patterns to skip.                                    | false    | `""`                        |
 | `output`           | Path to write the JSON scan results to.                                  | false    | `linkcheck-results.json`    |
+| `baseline`         | Path to a previous JSON results file; only links that are newly broken relative to it fail the job. | false    | `""`                        |
 | `args`             | Extra raw arguments passed through to `linksanity scan` as-is.           | false    | `""`                        |
 | `upload-results`   | Whether to upload the scan results file as a workflow artifact (`"true"`/`"false"`). | false    | `true`                      |
 | `artifact-name`    | Name of the workflow artifact to upload the scan results as. Set a distinct value per job when a workflow calls this action more than once. | false    | `linksanity-results`        |
 | `browser`          | Whether to install the Playwright browser extra, required for `--js-domains` (`"true"`/`"false"`). Adds a Chromium download to the run. | false    | `false`                     |
 
 `--js-domains` passed via `args` requires `browser: true`; otherwise the action fails fast with a clear error instead of installing Playwright unconditionally on every run.
+
+`baseline` must contain no whitespace and must not start with `-` (the value is passed unquoted, same constraint as `paths`); the action fails with an error rather than proceeding. If set and the named file does not exist, the action also fails — it does not silently fall back to checking everything.
 
 ### Versioning
 

@@ -29,6 +29,10 @@ inputs:
     description: Path to write the JSON scan results to.
     required: false
     default: "linkcheck-results.json"
+  baseline:
+    description: Path to a previous JSON results file; only links that are newly broken relative to it fail the job.
+    required: false
+    default: ""
   args:
     description: Extra raw arguments passed through to `linksanity scan` as-is.
     required: false
@@ -93,6 +97,7 @@ runs:
         CHECK_ANCHORS: ${{ inputs.check-anchors }}
         SKIP_URLS: ${{ inputs.skip-urls }}
         OUTPUT: ${{ inputs.output }}
+        BASELINE: ${{ inputs.baseline }}
         EXTRA_ARGS: ${{ inputs.args }}
         BROWSER: ${{ inputs.browser }}
       run: |
@@ -115,6 +120,28 @@ runs:
           printf '%s\n' $SKIP_URLS > "$skip_file"
           set +f
           flags="$flags --skip-urls $skip_file"
+        fi
+        if [ -n "$BASELINE" ]; then
+          # $BASELINE is deliberately unquoted below (see the note near the
+          # scan invocation), so it must not contain whitespace or start with
+          # a dash (which would word-split into a flag).
+          case "$BASELINE" in
+            *[[:space:]]*)
+              echo "::error::baseline: '$BASELINE' contains whitespace, which is not allowed since the value is passed unquoted."
+              exit 1
+              ;;
+          esac
+          case "$BASELINE" in
+            -*)
+              echo "::error::baseline: '$BASELINE' starts with '-', which would be parsed as a flag instead of a path."
+              exit 1
+              ;;
+          esac
+          if [ ! -f "$BASELINE" ]; then
+            echo "::error::baseline: file '$BASELINE' was not found. Check the path passed to the baseline input."
+            exit 1
+          fi
+          flags="$flags --baseline $BASELINE"
         fi
 
         set +e
