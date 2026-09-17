@@ -57,6 +57,9 @@ outputs:
   results-file:
     description: Path to the JSON results file written by the scan.
     value: ${{ steps.scan.outputs.results-file }}
+  annotations:
+    description: "The literal ::error:: annotation lines emitted for failing links (empty when there were none), exposed so callers and self-test can assert against the real text instead of reimplementing it."
+    value: ${{ steps.scan.outputs.annotations }}
 
 runs:
   using: composite
@@ -183,7 +186,11 @@ runs:
             # ::error:: annotation. Collapse CR/LF to a space before use. The
             # file= property is further restricted (no "," or "::") since
             # those characters would corrupt GitHub's file=/line= parsing.
-            jq -r --argjson failing_statuses "$FAILING_STATUSES_JSON" '
+            # Captured into a variable (rather than piped straight to stdout)
+            # so the exact same text can also be exposed as the `annotations`
+            # output below -- the annotation output step must always print the
+            # literal text it exposes, not a second reimplementation of it.
+            annotations=$(jq -r --argjson failing_statuses "$FAILING_STATUSES_JSON" '
               .[]
               | select(.status as $s | $failing_statuses | index($s) != null)
               | . as $r
@@ -194,9 +201,14 @@ runs:
               | (if $r.line == null then "" else ",line=" + ($r.line|tostring) end) as $lineattr
               | (if $r.status == "too_many_redirects" then "redirect loop" else ($r.status // "") end) as $status_label
               | "::error file=" + $file_attr + $lineattr + "::" + $url + " — " + $status_label + (if $detail == "" then "" else " " + $detail end)
-            ' "$OUTPUT" | while IFS= read -r annotation; do
-              printf '%s\n' "$annotation"
-            done || true
+            ' "$OUTPUT") || true
+            printf '%s\n' "$annotations"
+
+            {
+              echo "annotations<<ANNOTATIONS_EOF"
+              printf '%s\n' "$annotations"
+              echo "ANNOTATIONS_EOF"
+            } >> "$GITHUB_OUTPUT"
 
             if [ -n "$GITHUB_STEP_SUMMARY" ]; then
               {

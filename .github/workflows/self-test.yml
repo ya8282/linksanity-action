@@ -58,21 +58,43 @@ jobs:
           test "$(jq '[.[] | select(.status != "too_many_redirects")] | length' "$RESULTS")" -eq 0
       - name: Assert the redirect-loop link is present in the real results, not silently dropped (linksanity-jx1)
         run: |
-          # This only checks the real results-file the scan step wrote, not a
-          # reimplementation of action.yml's annotation jq: action.yml emits
-          # its ::error:: annotations as workflow commands on the scan step's
-          # own stdout, and there is no supported way for a later step in
-          # this job to capture that text back out (no steps.scan.outputs
-          # field carries it, and GitHub processes workflow commands off the
-          # live log rather than exposing them to subsequent steps). So this
-          # step is deliberately narrower than "assert the annotation text":
-          # it only pins that the too_many_redirects record which would be
-          # selected for annotation actually carries a URL, using the action's
-          # own declared output (results-file) as the source of truth.
           RESULTS="${{ steps.scan.outputs.results-file }}"
           url=$(jq -r '[.[] | select(.status=="too_many_redirects")][0].url' "$RESULTS")
           test -n "$url"
           test "$url" != "null"
+      - name: Assert the too_many_redirects annotation uses the action's real emitted label (linksanity-jx1, linksanity-ypf)
+        env:
+          # Passed through env, not spliced into the script body: annotations
+          # are built from scanned document content (urls/errors), so this
+          # text is attacker-influenced and must never be interpolated where
+          # bash would re-parse it.
+          ANNOTATIONS: ${{ steps.scan.outputs.annotations }}
+        run: |
+          # ANNOTATIONS carries the exact ::error:: lines action.yml built and
+          # printed for this run (see the `annotations` output) -- not a
+          # reimplementation of its jq. If action.yml's too_many_redirects
+          # label ever changes, this assertion breaks because the captured
+          # text itself changes, not because a second copy of the label logic
+          # drifted from it.
+          #
+          # A plain substring match on "redirect loop" also matches a stale
+          # or regressed label such as "too many redirects (redirect loop)"
+          # or "redirect loop detected" (both contain that substring), so pin
+          # the exact label instead: it must be followed immediately by
+          # either end of line or this record's own detail text, queried
+          # straight from the results file (not action.yml's jq), so nothing
+          # that varies with --max-redirects is hardcoded here.
+          test -n "$ANNOTATIONS"
+          RESULTS="${{ steps.scan.outputs.results-file }}"
+          record=$(jq -c '[.[] | select(.status=="too_many_redirects")][0]' "$RESULTS")
+          url=$(jq -r '.url' <<<"$record")
+          detail=$(jq -r '(.http_code // .error // "") | tostring' <<<"$record")
+          if [ -n "$detail" ]; then
+            expected="$url — redirect loop $detail"
+          else
+            expected="$url — redirect loop"
+          fi
+          printf '%s\n' "$ANNOTATIONS" | grep -F -q -- "$expected"
 
   js-domains-without-browser-fails-fast:
     name: --js-domains without browser fails fast
