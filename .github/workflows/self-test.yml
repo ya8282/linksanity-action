@@ -38,6 +38,42 @@ jobs:
           test "${{ steps.scan.outcome }}" = "success"
           test "${{ steps.scan.outputs.broken-count }}" -eq 0
 
+  too-many-redirects-fixture:
+    name: Too-many-redirects-only fixture still fails and is counted
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - id: scan
+        uses: ./
+        continue-on-error: true
+        with:
+          paths: test-docs/too-many-redirects/
+          args: "--max-redirects 0"
+          artifact-name: linksanity-results-too-many-redirects-fixture
+      - name: Assert a too_many_redirects-only failure still fails the job and is counted
+        run: |
+          test "${{ steps.scan.outcome }}" = "failure"
+          test "${{ steps.scan.outputs.broken-count }}" -ge 1
+          RESULTS="${{ steps.scan.outputs.results-file }}"
+          test "$(jq '[.[] | select(.status != "too_many_redirects")] | length' "$RESULTS")" -eq 0
+      - name: Assert the redirect-loop link is present in the real results, not silently dropped (linksanity-jx1)
+        run: |
+          # This only checks the real results-file the scan step wrote, not a
+          # reimplementation of action.yml's annotation jq: action.yml emits
+          # its ::error:: annotations as workflow commands on the scan step's
+          # own stdout, and there is no supported way for a later step in
+          # this job to capture that text back out (no steps.scan.outputs
+          # field carries it, and GitHub processes workflow commands off the
+          # live log rather than exposing them to subsequent steps). So this
+          # step is deliberately narrower than "assert the annotation text":
+          # it only pins that the too_many_redirects record which would be
+          # selected for annotation actually carries a URL, using the action's
+          # own declared output (results-file) as the source of truth.
+          RESULTS="${{ steps.scan.outputs.results-file }}"
+          url=$(jq -r '[.[] | select(.status=="too_many_redirects")][0].url' "$RESULTS")
+          test -n "$url"
+          test "$url" != "null"
+
   js-domains-without-browser-fails-fast:
     name: --js-domains without browser fails fast
     runs-on: ubuntu-latest

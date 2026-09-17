@@ -58,7 +58,7 @@ This action pins `version` to a known-good linksanity release by default, so upg
 
 | Name            | Description                                                    |
 | ---------------- | ---------------------------------------------------------------- |
-| `broken-count`    | Number of links with status "broken" or "error" found by the scan. |
+| `broken-count`    | Number of links found by the scan with a failing status (broken, error, or too_many_redirects — a redirect loop counts as a failure even though it isn't literally "broken"). |
 | `results-file`    | Path to the JSON results file written by the scan.               |
 
 ## Self-test

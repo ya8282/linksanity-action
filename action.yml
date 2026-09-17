@@ -52,7 +52,7 @@ inputs:
 
 outputs:
   broken-count:
-    description: Number of links with status "broken" or "error" found by the scan.
+    description: Number of links found by the scan with a failing status (broken, error, or too_many_redirects — a redirect loop counts as a failure even though it isn't literally "broken").
     value: ${{ steps.scan.outputs.broken-count }}
   results-file:
     description: Path to the JSON results file written by the scan.
@@ -155,12 +155,22 @@ runs:
         # stage. Any early exit (unknown flag, unreadable config, missing
         # Playwright) leaves no file, so jq must not be allowed to fail here --
         # it would mask the real error and leave both outputs unset.
+        #
+        # What counts as a failure here must track linksanity/queue.py's
+        # FAILING_STATUSES: broken, error, and too_many_redirects (a redirect
+        # loop never resolved, so it's unusable exactly like broken/error, even
+        # though the CLI's exit code and a human-facing "broken" label treat it
+        # separately). Single-sourced as FAILING_STATUSES_JSON below so the
+        # count, the ::error:: annotations, and the summary table can never
+        # drift from each other again (linksanity-jx1).
+        FAILING_STATUSES_JSON='["broken","error","too_many_redirects"]'
+
         broken_count=0
         if [ -f "$OUTPUT" ]; then
-          broken_count=$(jq '[.[] | select(.status=="broken" or .status=="error")] | length' "$OUTPUT" 2>/dev/null || echo 0)
+          broken_count=$(jq --argjson failing_statuses "$FAILING_STATUSES_JSON" '[.[] | select(.status as $s | $failing_statuses | index($s) != null)] | length' "$OUTPUT" 2>/dev/null || echo 0)
 
           if [ "$broken_count" -gt 0 ]; then
-            # Emit one GitHub Actions error annotation per broken link so the
+            # Emit one GitHub Actions error annotation per failing link so the
             # failure is visible in the raw log without downloading the
             # uploaded artifact. Build the fully-formed annotation line in
             # jq itself (not by interpolating fields into the shell) since
@@ -173,29 +183,30 @@ runs:
             # ::error:: annotation. Collapse CR/LF to a space before use. The
             # file= property is further restricted (no "," or "::") since
             # those characters would corrupt GitHub's file=/line= parsing.
-            jq -r '
+            jq -r --argjson failing_statuses "$FAILING_STATUSES_JSON" '
               .[]
-              | select(.status=="broken" or .status=="error")
+              | select(.status as $s | $failing_statuses | index($s) != null)
               | . as $r
               | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
               | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
               | (if $r.http_code != null then ($r.http_code|tostring) elif $r.error != null then ($r.error|tostring) else "" end | gsub("[\r\n]+"; " ")) as $detail
               | ($source | gsub(","; "_") | gsub("::"; ":")) as $file_attr
               | (if $r.line == null then "" else ",line=" + ($r.line|tostring) end) as $lineattr
-              | "::error file=" + $file_attr + $lineattr + "::" + $url + " — " + ($r.status // "") + (if $detail == "" then "" else " " + $detail end)
+              | (if $r.status == "too_many_redirects" then "redirect loop" else ($r.status // "") end) as $status_label
+              | "::error file=" + $file_attr + $lineattr + "::" + $url + " — " + $status_label + (if $detail == "" then "" else " " + $detail end)
             ' "$OUTPUT" | while IFS= read -r annotation; do
               printf '%s\n' "$annotation"
             done || true
 
             if [ -n "$GITHUB_STEP_SUMMARY" ]; then
               {
-                echo "### $broken_count broken link(s) found"
+                echo "### $broken_count failing link(s) found"
                 echo ""
                 echo "| Source | Line | URL | Status | Detail |"
                 echo "| --- | --- | --- | --- | --- |"
-                jq -r '
+                jq -r --argjson failing_statuses "$FAILING_STATUSES_JSON" '
                   .[]
-                  | select(.status=="broken" or .status=="error")
+                  | select(.status as $s | $failing_statuses | index($s) != null)
                   | . as $r
                   | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
                   | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
