@@ -89,11 +89,11 @@ jobs:
           record=$(jq -c '[.[] | select(.status=="too_many_redirects")][0]' "$RESULTS")
           url=$(jq -r '.url' <<<"$record")
           detail=$(jq -r '(.http_code // .error // "") | tostring' <<<"$record")
-          if [ -n "$detail" ]; then
-            expected="$url — redirect loop $detail"
-          else
-            expected="$url — redirect loop"
+          if [ -z "$detail" ]; then
+            echo "::error::too_many_redirects record for '$url' has neither http_code nor error, so this assertion has no detail text to anchor the expected annotation to (see linksanity-1ie). The fixture must have changed shape -- check test-docs/too-many-redirects/ and action.yml's too_many_redirects annotation logic." >&2
+            exit 1
           fi
+          expected="$url — redirect loop $detail"
           printf '%s\n' "$ANNOTATIONS" | grep -F -q -- "$expected"
 
   js-domains-without-browser-fails-fast:
