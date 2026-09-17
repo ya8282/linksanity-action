@@ -204,10 +204,11 @@ runs:
             ' "$OUTPUT") || true
             printf '%s\n' "$annotations"
 
+            delim=$(openssl rand -hex 16)
             {
-              echo "annotations<<ANNOTATIONS_EOF"
+              echo "annotations<<$delim"
               printf '%s\n' "$annotations"
-              echo "ANNOTATIONS_EOF"
+              echo "$delim"
             } >> "$GITHUB_OUTPUT"
 
             if [ -n "$GITHUB_STEP_SUMMARY" ]; then
