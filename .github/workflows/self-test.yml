@@ -145,3 +145,35 @@ jobs:
       - name: Assert the action failed on the missing baseline
         run: |
           test "${{ steps.scan.outcome }}" = "failure"
+
+  version-pin-consistency:
+    name: version input default matches linksanity's _ACTION_PINNED_VERSION
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with: {repository: ya8282/linksanity, ref: main, path: _linksanity-src}
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+      - name: Compare action.yml's pin against linksanity/init.py's _ACTION_PINNED_VERSION
+        run: |
+          python3 - <<'PYEOF'
+          import ast, yaml
+          expected = yaml.safe_load(open("action.yml"))["inputs"]["version"]["default"]
+          src = "_linksanity-src/linksanity/init.py"
+          tree = ast.parse(open(src).read(), filename=src)
+          installed = None
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Assign):
+                  for t in node.targets:
+                      if isinstance(t, ast.Name) and t.id == "_ACTION_PINNED_VERSION":
+                          installed = ast.literal_eval(node.value)
+          if installed is None:
+              print("::warning::_ACTION_PINNED_VERSION is absent from linksanity's main (linksanity/init.py), so this check is not yet enforcing anything. It will begin enforcing once that constant lands on main.")
+              raise SystemExit(0)
+          if installed != expected:
+              print(f"::error::action.yml's `version` input default is '{expected}' (action-repo/action.yml), but linksanity/init.py's _ACTION_PINNED_VERSION is '{installed}' (linksanity/init.py). Update whichever is stale so they agree.")
+              raise SystemExit(1)
+          print(f"OK: action.yml and linksanity/init.py agree on {expected}")
+          PYEOF
