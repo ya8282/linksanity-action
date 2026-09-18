@@ -144,6 +144,17 @@ jobs:
           test "$url" != "null"
           printf '%s\n' "$WARNINGS" | grep -F -q -- "::warning"
           printf '%s\n' "$WARNINGS" | grep -F -q -- "$url"
+          # The two greps above only catch deletion of the whole jq pass.
+          # They would stay green even if the file=/line= properties (added
+          # alongside the ::error:: path) were dropped from the ::warning::
+          # line, which would silently stop the warning from attaching to
+          # the source line in the GitHub UI. Assert the full annotation
+          # shape against the real fixture path instead of just the marker.
+          # -E (not -F) because this pattern needs [0-9]+; the literal "."
+          # in the filename is escaped so it can't match any character, and
+          # the fixture path has no other regex metacharacters. The line
+          # number itself isn't pinned since the fixture may grow lines.
+          printf '%s\n' "$WARNINGS" | grep -E -q -- '::warning file=test-docs/too-many-redirects/redirect\.md,line=[0-9]+::'
 
   js-domains-without-browser-fails-fast:
     name: --js-domains without browser fails fast
