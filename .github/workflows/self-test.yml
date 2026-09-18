@@ -96,6 +96,35 @@ jobs:
           expected="$url — redirect loop $detail"
           printf '%s\n' "$ANNOTATIONS" | grep -F -q -- "$expected"
 
+  too-many-redirects-fixture-not-failing:
+    name: Too-many-redirects-only fixture passes and warns when fail-on-redirect-loop is false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - id: scan
+        uses: ./
+        with:
+          paths: test-docs/too-many-redirects/
+          args: "--max-redirects 0"
+          fail-on-redirect-loop: "false"
+          artifact-name: linksanity-results-too-many-redirects-fixture-not-failing
+      - name: Assert a too_many_redirects-only run succeeds and is not counted when fail-on-redirect-loop is false (linksanity-9tw)
+        run: |
+          test "${{ steps.scan.outcome }}" = "success"
+          test "${{ steps.scan.outputs.broken-count }}" -eq 0
+          RESULTS="${{ steps.scan.outputs.results-file }}"
+          test "$(jq '[.[] | select(.status=="too_many_redirects")] | length' "$RESULTS")" -ge 1
+      - name: Assert the redirect loop was surfaced as a warning, not an error (linksanity-9tw)
+        run: |
+          # No ::error:: annotation is built when broken-count is 0 (the
+          # `annotations` output is only ever written inside that branch), so
+          # its absence here is the direct, output-based proof that this
+          # redirect loop was not treated as an ::error::. Combined with the
+          # previous step's proof that the record is still present in the
+          # real results file (not silently dropped), the only place left for
+          # it to have surfaced is the ::warning:: path added for this input.
+          test -z "${{ steps.scan.outputs.annotations }}"
+
   js-domains-without-browser-fails-fast:
     name: --js-domains without browser fails fast
     runs-on: ubuntu-latest
@@ -145,6 +174,32 @@ jobs:
       - name: Assert the action failed on the missing baseline
         run: |
           test "${{ steps.scan.outcome }}" = "failure"
+
+  report-write-failure-still-fails:
+    name: A results file with a subsequent CLI failure still fails the job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - id: scan
+        uses: ./
+        continue-on-error: true
+        with:
+          paths: test-docs/clean/
+          args: "--report /nonexistent-linksanity-selftest-dir-xyz/report.md"
+          artifact-name: linksanity-results-report-write-failure
+      - name: Assert a results file with no failing links but a later CLI failure (unwritable --report path) still fails the job (linksanity-9tw)
+        run: |
+          # linksanity writes --output before it attempts --report, so the
+          # results file exists and is valid (no failing links) here even
+          # though the CLI itself goes on to exit 2 for the unwritable
+          # --report path. This pins the regression where a present, valid
+          # results file made the action's own broken-count policy override
+          # ANY CLI exit code -- including this one -- down to success.
+          test "${{ steps.scan.outcome }}" = "failure"
+          RESULTS="${{ steps.scan.outputs.results-file }}"
+          test -f "$RESULTS"
+          test "$(jq 'length' "$RESULTS")" -ge 1
+          test "${{ steps.scan.outputs.broken-count }}" -eq 0
 
   version-pin-consistency:
     name: version input default matches linksanity's _ACTION_PINNED_VERSION

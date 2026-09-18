@@ -49,6 +49,10 @@ inputs:
     description: Whether to install the Playwright browser extra, required for --js-domains ("true"/"false"). Adds a Chromium download to the run.
     required: false
     default: "false"
+  fail-on-redirect-loop:
+    description: "Whether a redirect loop (too_many_redirects) fails the job and is counted in broken-count (\"true\"/\"false\"). When \"false\" it is still surfaced as a ::warning:: instead of being silently dropped."
+    required: false
+    default: "true"
 
 outputs:
   broken-count:
@@ -103,6 +107,7 @@ runs:
         BASELINE: ${{ inputs.baseline }}
         EXTRA_ARGS: ${{ inputs.args }}
         BROWSER: ${{ inputs.browser }}
+        FAIL_ON_REDIRECT_LOOP: ${{ inputs.fail-on-redirect-loop }}
       run: |
         if [ "$BROWSER" != "true" ]; then
           case "$EXTRA_ARGS" in
@@ -154,10 +159,13 @@ runs:
         code=$?
         set -e
 
-        # linksanity only writes the results file once it reaches the reporting
-        # stage. Any early exit (unknown flag, unreadable config, missing
-        # Playwright) leaves no file, so jq must not be allowed to fail here --
-        # it would mask the real error and leave both outputs unset.
+        # linksanity writes --output before it writes --report or computes its
+        # own exit code, so the results file can exist even when the CLI goes
+        # on to fail for an unrelated reason (e.g. --report pointing at an
+        # unwritable path). A present file is therefore necessary but not
+        # sufficient to trust jq's output or override the CLI's exit code --
+        # see the jq_ok handling below and the exit-code contract comment near
+        # the bottom of this step.
         #
         # What counts as a failure here must track linksanity/queue.py's
         # FAILING_STATUSES: broken, error, and too_many_redirects (a redirect
@@ -165,12 +173,69 @@ runs:
         # though the CLI's exit code and a human-facing "broken" label treat it
         # separately). Single-sourced as FAILING_STATUSES_JSON below so the
         # count, the ::error:: annotations, and the summary table can never
-        # drift from each other again (linksanity-jx1).
-        FAILING_STATUSES_JSON='["broken","error","too_many_redirects"]'
+        # drift from each other again (linksanity-jx1). The fail-on-redirect-loop
+        # input lets a caller opt too_many_redirects out of that set entirely
+        # (linksanity-9tw); it is still surfaced, just as ::warning:: instead
+        # of ::error::, in the block below.
+        if [ "$FAIL_ON_REDIRECT_LOOP" = "false" ]; then
+          FAILING_STATUSES_JSON='["broken","error"]'
+        else
+          FAILING_STATUSES_JSON='["broken","error","too_many_redirects"]'
+        fi
 
         broken_count=0
+        jq_ok=false
         if [ -f "$OUTPUT" ]; then
-          broken_count=$(jq --argjson failing_statuses "$FAILING_STATUSES_JSON" '[.[] | select(.status as $s | $failing_statuses | index($s) != null)] | length' "$OUTPUT" 2>/dev/null || echo 0)
+          # Capture jq's own exit status (via the `if` condition, which is
+          # exempt from `set -e`) rather than folding a parse failure into
+          # `|| echo 0`: that older form made "jq parsed the file and found 0"
+          # indistinguishable from "jq failed to parse the file at all", which
+          # let the exit-code override below fire on an unusable results file
+          # and silently turn a genuine CLI failure into success (linksanity-9tw).
+          #
+          # A genuinely empty (0-byte) results file is a second, quieter
+          # variant of the same problem: jq treats an empty input stream as
+          # zero JSON values to filter, so it exits 0 and prints nothing --
+          # no error to catch, just an empty $broken_count -- rather than
+          # failing outright the way truncated/malformed JSON does. Reject
+          # that case explicitly by requiring the captured value to actually
+          # be a non-negative integer.
+          if broken_count=$(jq --argjson failing_statuses "$FAILING_STATUSES_JSON" '[.[] | select(.status as $s | $failing_statuses | index($s) != null)] | length' "$OUTPUT" 2>/dev/null); then
+            case "$broken_count" in
+              ''|*[!0-9]*)
+                jq_ok=false
+                ;;
+              *)
+                jq_ok=true
+                ;;
+            esac
+          else
+            jq_ok=false
+          fi
+          if [ "$jq_ok" = false ]; then
+            broken_count=0
+            echo "::error::linksanity wrote $OUTPUT but it could not be parsed as the expected JSON array of scan results (empty file, truncated JSON, or valid JSON that isn't a list). This action's pass/fail policy cannot be evaluated against unusable results, so the scan's own exit code ($code) is being propagated as-is. Check the scan step log above and the uploaded artifact for $OUTPUT."
+          fi
+
+          if [ "$FAIL_ON_REDIRECT_LOOP" = "false" ]; then
+            # too_many_redirects was excluded from FAILING_STATUSES_JSON above,
+            # so it's neither counted nor ::error::-annotated below; emit a
+            # ::warning:: per redirect-loop link instead so it's never silently
+            # dropped (linksanity-9tw). No existing warning path covers this
+            # (the only other ::warning:: here is for a missing results file
+            # entirely), so this is a new, narrower jq pass.
+            redirect_warnings=$(jq -r '
+              .[]
+              | select(.status == "too_many_redirects")
+              | . as $r
+              | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
+              | (if $r.http_code != null then ($r.http_code|tostring) elif $r.error != null then ($r.error|tostring) else "" end | gsub("[\r\n]+"; " ")) as $detail
+              | "::warning::" + $url + " — redirect loop" + (if $detail == "" then "" else " " + $detail end)
+            ' "$OUTPUT") || true
+            if [ -n "$redirect_warnings" ]; then
+              printf '%s\n' "$redirect_warnings"
+            fi
+          fi
 
           if [ "$broken_count" -gt 0 ]; then
             # Emit one GitHub Actions error annotation per failing link so the
@@ -237,6 +302,37 @@ runs:
         echo "broken-count=$broken_count" >> "$GITHUB_OUTPUT"
         echo "results-file=$OUTPUT" >> "$GITHUB_OUTPUT"
 
+        # Pinned linksanity==0.2.0's own contract (verified empirically against
+        # cli.py, not assumed): scan() raises typer.Exit(1 if broken else 0)
+        # only after it has written --output and --report, where "broken"
+        # counts only BROKEN/ERROR statuses (never too_many_redirects). One
+        # exception to treating 1 as a link-status verdict: --github-issue
+        # without GITHUB_TOKEN raises an unhandled RuntimeError, which Python
+        # exits 1 for. That reporter returns early when nothing is broken, so
+        # such a run always has at least one BROKEN/ERROR link and fails under
+        # either policy anyway. Every other exit
+        # code (2, observed for both a rejected flag and a failed --report
+        # write) is an operational failure raised via typer.Exit(2), and can
+        # occur even after the results file was written successfully (e.g.
+        # --report pointing at an unwritable path fails *after* --output is
+        # written), so a present results file alone does NOT mean the CLI's
+        # exit code is about link statuses.
+        #
+        # This action's own policy (fail-on-redirect-loop plus the other
+        # FAILING_STATUSES) may only supersede the CLI's exit code when both:
+        # (a) the CLI's code is one this action's policy actually owns (0 or
+        # 1), and (b) jq successfully parsed the results file, so broken_count
+        # is a real count and not a parse failure masquerading as zero. If
+        # either condition fails, the CLI's own exit code is propagated
+        # verbatim instead -- this is what keeps an unwritable --report path,
+        # an unparseable results file, or a future non-0/1/2 code from being
+        # silently downgraded to success (linksanity-9tw).
+        if [ -f "$OUTPUT" ] && [ "$jq_ok" = true ] && { [ "$code" -eq 0 ] || [ "$code" -eq 1 ]; }; then
+          if [ "$broken_count" -gt 0 ]; then
+            exit 1
+          fi
+          exit 0
+        fi
         exit $code
 
     - name: Upload scan results

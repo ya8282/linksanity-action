@@ -45,6 +45,7 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 | `upload-results`   | Whether to upload the scan results file as a workflow artifact (`"true"`/`"false"`). | false    | `true`                      |
 | `artifact-name`    | Name of the workflow artifact to upload the scan results as. Set a distinct value per job when a workflow calls this action more than once. | false    | `linksanity-results`        |
 | `browser`          | Whether to install the Playwright browser extra, required for `--js-domains` (`"true"`/`"false"`). Adds a Chromium download to the run. | false    | `false`                     |
+| `fail-on-redirect-loop` | Whether a redirect loop (`too_many_redirects`) fails the job and is counted in `broken-count` (`"true"`/`"false"`). When `"false"` it is still surfaced as a `::warning::` instead of being silently dropped. | false    | `true`                      |
 
 `--js-domains` passed via `args` requires `browser: true`; otherwise the action fails fast with a clear error instead of installing Playwright unconditionally on every run.
 
