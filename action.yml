@@ -10,7 +10,7 @@ inputs:
   version:
     # Bump this default whenever a new linksanity release should reach action
     # users: this is the one place that controls what consumers get.
-    description: Version of linksanity to install from PyPI, pinned to the release this action is tested against. Pass "" to track the latest release instead (may break if the CLI changes), or an explicit "X.Y.Z" to pin to something else.
+    description: Version of linksanity to install from PyPI, pinned to the release this action is tested against; pass "" to track the latest release instead, or an explicit "X.Y.Z" to pin to something else. This action's exit-code handling assumes the CLI's 0/1/2 contract (0 and 1 are link-status verdicts, 2 and above are operational failures), so tracking latest means trusting a version this action has not verified against that contract.
     required: false
     default: "0.2.0"
   python-version:
@@ -324,6 +324,11 @@ runs:
         echo "broken-count=$broken_count" >> "$GITHUB_OUTPUT"
         echo "results-file=$OUTPUT" >> "$GITHUB_OUTPUT"
 
+        # The exit-code logic below assumes the pinned contract documented on
+        # the `version` input: it is verified for 0.2.0 only, and setting
+        # `version` to "" or another release trusts an unverified CLI to
+        # keep it (linksanity-ivy).
+        #
         # Pinned linksanity==0.2.0's own contract (verified empirically against
         # cli.py, not assumed): scan() raises typer.Exit(1 if broken else 0)
         # only after it has written --output and --report, where "broken"

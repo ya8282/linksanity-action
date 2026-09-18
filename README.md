@@ -35,7 +35,7 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 | Name             | Description                                                             | Required | Default                    |
 | ----------------- | ------------------------------------------------------------------------ | -------- | --------------------------- |
 | `paths`           | Space-separated paths to scan for links.                                 | false    | `.`                         |
-| `version`          | Version of linksanity to install from PyPI, pinned to the release this action is tested against. Pass `""` to track latest instead. | false    | `0.2.0`                     |
+| `version`          | Version of linksanity to install from PyPI, pinned to the release this action is tested against. Pass `""` to track latest instead — see [Versioning](#versioning) for what that trusts. | false    | `0.2.0`                     |
 | `python-version`   | Python version to set up for running linksanity.                         | false    | `3.12`                      |
 | `check-anchors`    | Whether to check in-page anchor links (`"true"`/`"false"`).              | false    | `false`                     |
 | `skip-urls`        | Space-separated URL patterns to skip.                                    | false    | `""`                        |
@@ -54,6 +54,8 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 ### Versioning
 
 This action pins `version` to a known-good linksanity release by default, so upgrading the action (via its tag) is what upgrades linksanity; the CLI is not left to float on its own. Pass `version: ""` to track the latest linksanity release instead; a CLI change (e.g. a renamed or removed flag) can then break the action without warning. Pass an explicit `version: "X.Y.Z"` to pin to a different release.
+
+This action's exit-code handling assumes the CLI's 0/1/2 contract (0 and 1 are link-status verdicts, 2 and above are operational failures), verified for the pinned default only; tracking latest means trusting a version this action has not verified against that contract.
 
 ## Outputs
 
