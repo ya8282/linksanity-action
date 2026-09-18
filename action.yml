@@ -64,6 +64,9 @@ outputs:
   annotations:
     description: "The literal ::error:: annotation lines emitted for failing links (empty when there were none), exposed so callers and self-test can assert against the real text instead of reimplementing it."
     value: ${{ steps.scan.outputs.annotations }}
+  warnings:
+    description: "The literal ::warning:: annotation lines emitted for redirect-loop links when fail-on-redirect-loop is false (empty when there were none), exposed so callers and self-test can assert against the real text instead of reimplementing it."
+    value: ${{ steps.scan.outputs.warnings }}
 
 runs:
   using: composite
@@ -185,6 +188,7 @@ runs:
 
         broken_count=0
         jq_ok=false
+        redirect_warnings=""
         if [ -f "$OUTPUT" ]; then
           # Capture jq's own exit status (via the `if` condition, which is
           # exempt from `set -e`) rather than folding a parse failure into
@@ -228,9 +232,12 @@ runs:
               .[]
               | select(.status == "too_many_redirects")
               | . as $r
+              | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
               | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
               | (if $r.http_code != null then ($r.http_code|tostring) elif $r.error != null then ($r.error|tostring) else "" end | gsub("[\r\n]+"; " ")) as $detail
-              | "::warning::" + $url + " — redirect loop" + (if $detail == "" then "" else " " + $detail end)
+              | ($source | gsub(","; "_") | gsub("::"; ":")) as $file_attr
+              | (if $r.line == null then "" else ",line=" + ($r.line|tostring) end) as $lineattr
+              | "::warning file=" + $file_attr + $lineattr + "::" + $url + " — redirect loop" + (if $detail == "" then "" else " " + $detail end)
             ' "$OUTPUT") || true
             if [ -n "$redirect_warnings" ]; then
               printf '%s\n' "$redirect_warnings"
@@ -298,6 +305,21 @@ runs:
         else
           echo "::warning::linksanity exited $code without writing $OUTPUT; reporting broken-count=0. Check the scan step log above for the underlying error."
         fi
+
+        # Written unconditionally (empty when there were no redirect-loop
+        # warnings), mirroring the `annotations` output above, so callers and
+        # self-test can assert against the real ::warning:: text instead of
+        # reimplementing it -- and so a self-test can fail if this jq pass is
+        # ever deleted (linksanity-rqd). Must not disturb `annotations` itself:
+        # that output is still written only inside the broken_count > 0
+        # branch above, and its emptiness in the fail-on-redirect-loop=false
+        # case is unchanged by this.
+        warn_delim=$(openssl rand -hex 16)
+        {
+          echo "warnings<<$warn_delim"
+          printf '%s\n' "$redirect_warnings"
+          echo "$warn_delim"
+        } >> "$GITHUB_OUTPUT"
 
         echo "broken-count=$broken_count" >> "$GITHUB_OUTPUT"
         echo "results-file=$OUTPUT" >> "$GITHUB_OUTPUT"

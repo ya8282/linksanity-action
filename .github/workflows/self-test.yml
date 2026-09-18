@@ -124,6 +124,26 @@ jobs:
           # real results file (not silently dropped), the only place left for
           # it to have surfaced is the ::warning:: path added for this input.
           test -z "${{ steps.scan.outputs.annotations }}"
+      - name: Assert the warning annotation text was actually printed, not just absent from annotations (linksanity-rqd)
+        env:
+          # Passed through env, not spliced into the script body: warnings
+          # are built from scanned document content (urls/errors), so this
+          # text is attacker-influenced and must never be interpolated where
+          # bash would re-parse it.
+          WARNINGS: ${{ steps.scan.outputs.warnings }}
+        run: |
+          # The previous step only proves a negative (no ::error:: was
+          # built). This proves the positive: the `warnings` output actually
+          # contains the ::warning:: line for this redirect loop, so the job
+          # would go red if the ::warning:: jq pass in action.yml were ever
+          # deleted (it would leave WARNINGS empty and this grep would fail).
+          test -n "$WARNINGS"
+          RESULTS="${{ steps.scan.outputs.results-file }}"
+          url=$(jq -r '[.[] | select(.status=="too_many_redirects")][0].url' "$RESULTS")
+          test -n "$url"
+          test "$url" != "null"
+          printf '%s\n' "$WARNINGS" | grep -F -q -- "::warning"
+          printf '%s\n' "$WARNINGS" | grep -F -q -- "$url"
 
   js-domains-without-browser-fails-fast:
     name: --js-domains without browser fails fast
