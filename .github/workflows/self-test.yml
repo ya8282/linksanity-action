@@ -22,6 +22,32 @@ jobs:
         run: |
           test "${{ steps.scan.outcome }}" = "failure"
           test "${{ steps.scan.outputs.broken-count }}" -ge 1
+      - name: "Assert the ::error:: annotation includes file=/line= (linksanity-g79)"
+        env:
+          # Passed through env, not spliced into the script body: annotations
+          # are built from scanned document content (urls/errors), so this
+          # text is attacker-influenced and must never be interpolated where
+          # bash would re-parse it.
+          ANNOTATIONS: ${{ steps.scan.outputs.annotations }}
+        run: |
+          # The previous step only proves a link was detected as broken, not
+          # that its ::error:: annotation carries file=/line=. action.yml
+          # builds those properties with the same jq expressions as the
+          # ::warning:: path tightened in linksanity-3pq; this closes the
+          # identical gap on the ::error:: side, so the job goes red if
+          # file=/line= are ever dropped from that jq pass.
+          #
+          # -E (not -F) because this pattern needs [0-9]+; the literal "."
+          # in the filename is escaped so it can't match any character, and
+          # the fixture path has no other regex metacharacters. The line
+          # number itself isn't pinned since the fixture may grow lines.
+          # This fixture (test-docs/broken/broken.md) has exactly one broken
+          # link, so a single combined grep cannot ambiguously match a
+          # different link's line -- unlike a fixture with more than one
+          # failing link, where a URL grep split from the shape grep could
+          # in principle match two different lines (see linksanity-g79).
+          test -n "$ANNOTATIONS"
+          printf '%s\n' "$ANNOTATIONS" | grep -E -q -- '::error file=test-docs/broken/broken\.md,line=[0-9]+::'
 
   clean-fixture:
     name: Clean fixture passes
