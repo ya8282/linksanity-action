@@ -10,7 +10,7 @@ inputs:
   version:
     # Bump this default whenever a new linksanity release should reach action
     # users: this is the one place that controls what consumers get.
-    description: Version of linksanity to install from PyPI, pinned to the release this action is tested against; pass "" to track the latest release instead, or an explicit "X.Y.Z" to pin to something else. This action's exit-code handling assumes the CLI's 0/1/2 contract (0 and 1 are link-status verdicts, 2 and above are operational failures), so tracking latest means trusting a version this action has not verified against that contract.
+    description: Version of linksanity to install from PyPI, pinned to the release this action is tested against; pass "" to track the latest release instead, or an explicit "X.Y.Z" to pin to something else. This action's exit-code handling assumes the CLI's exit-code contract (0 and 1 are link-status verdicts, 2 and above are operational failures); linksanity 0.4.0+ also uses 3 for a failed --github-issue report; 0.3.0 and earlier, including the pinned default (0.2.0), report a reporter failure as 1 instead. Tracking latest means trusting a version this action has not verified against either contract.
     required: false
     default: "0.2.0"
   python-version:
@@ -352,8 +352,9 @@ runs:
         # is a real count and not a parse failure masquerading as zero. If
         # either condition fails, the CLI's own exit code is propagated
         # verbatim instead -- this is what keeps an unwritable --report path,
-        # an unparseable results file, or a future non-0/1/2 code from being
-        # silently downgraded to success (linksanity-9tw).
+        # an unparseable results file, or a non-0/1 code (2 for an operational
+        # error, 3 for a failed --github-issue report, or any other code) from
+        # being silently downgraded to success (linksanity-9tw).
         if [ -f "$OUTPUT" ] && [ "$jq_ok" = true ] && { [ "$code" -eq 0 ] || [ "$code" -eq 1 ]; }; then
           if [ "$broken_count" -gt 0 ]; then
             exit 1

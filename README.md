@@ -55,7 +55,7 @@ Just want the CLI? See [ya8282/linksanity](https://github.com/ya8282/linksanity)
 
 This action pins `version` to a known-good linksanity release by default, so upgrading the action (via its tag) is what upgrades linksanity; the CLI is not left to float on its own. Pass `version: ""` to track the latest linksanity release instead; a CLI change (e.g. a renamed or removed flag) can then break the action without warning. Pass an explicit `version: "X.Y.Z"` to pin to a different release.
 
-This action's exit-code handling assumes the CLI's 0/1/2 contract (0 and 1 are link-status verdicts, 2 and above are operational failures), verified for the pinned default only; tracking latest means trusting a version this action has not verified against that contract.
+This action's exit-code handling assumes the CLI's exit-code contract (0 and 1 are link-status verdicts, 2 and above are operational failures), verified for the pinned default only; linksanity 0.4.0+ also uses 3 for a failed --github-issue report; 0.3.0 and earlier, including the pinned default (0.2.0), report a reporter failure as 1 instead. Tracking latest means trusting a version this action has not verified against either contract.
 
 ## Outputs
 
